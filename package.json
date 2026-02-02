@@ -1,0 +1,25 @@
+{
+  "name": "tmux-tui",
+  "version": "0.1.0",
+  "description": "A fast bookmark and jump tool for tmux with TUI picker",
+  "module": "src/index.ts",
+  "type": "module",
+  "bin": {
+    "tmux-tui": "./dist/tmux-tui"
+  },
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "build": "bun build src/index.ts --compile --outfile=dist/tmux-tui",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "lint": "bunx @biomejs/biome lint ./src",
+    "format": "bunx @biomejs/biome format --write ./src"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
