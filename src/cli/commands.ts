@@ -6,6 +6,7 @@ import type { BookmarkKind } from "../types/index.ts"
 import { TmuxAdapter, TmuxError, TmuxNoServerError, TmuxNotFoundError } from "../tmux/index.ts"
 import { BookmarkStore } from "../storage/index.ts"
 import { resolveBookmark } from "./resolver.ts"
+import { runPicker } from "../tui/index.ts"
 
 const adapter = new TmuxAdapter()
 const store = new BookmarkStore()
@@ -157,8 +158,13 @@ export async function cmdJump(target: string, client?: string): Promise<void> {
 /**
  * List all bookmarks
  */
-export async function cmdList(): Promise<void> {
+export async function cmdList(countOnly = false): Promise<void> {
   const bookmarks = await store.list()
+
+  if (countOnly) {
+    console.log(bookmarks.length)
+    return
+  }
 
   if (bookmarks.length === 0) {
     console.log("No bookmarks yet. Use 'tmux-tui add <label>' to create one.")
@@ -367,5 +373,55 @@ export async function cmdState(): Promise<void> {
       process.exit(1)
     }
     throw e
+  }
+}
+
+/**
+ * Interactive TUI picker for bookmarks
+ */
+export async function cmdPick(client?: string): Promise<void> {
+  const bookmarks = await store.list()
+
+  if (bookmarks.length === 0) {
+    console.log("No bookmarks yet. Use 'tmux-tui add <label>' to create one.")
+    return
+  }
+
+  // Resolve all bookmarks to get their status
+  const resolvedStatus = await Promise.all(
+    bookmarks.map(async (bookmark) => {
+      const resolution = await resolveBookmark(bookmark, adapter)
+      return resolution.resolved
+    })
+  )
+
+  // Run the picker
+  const result = await runPicker(bookmarks, resolvedStatus, {
+    title: "Bookmarks",
+  })
+
+  if (result) {
+    // User selected a bookmark - jump to it
+    const { bookmark } = result
+    const resolution = await resolveBookmark(bookmark, adapter)
+
+    if (!resolution.resolved) {
+      console.error(`Error: could not resolve bookmark: ${resolution.reason}`)
+      process.exit(1)
+    }
+
+    // Update last used timestamp
+    await store.touch(bookmark.id)
+
+    // Switch to target
+    try {
+      await adapter.switchTo(resolution.target, client)
+    } catch (e) {
+      if (e instanceof TmuxError) {
+        console.error(`Error: ${e.message}`)
+        process.exit(1)
+      }
+      throw e
+    }
   }
 }

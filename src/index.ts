@@ -8,6 +8,7 @@ import {
   cmdAdd,
   cmdJump,
   cmdList,
+  cmdPick,
   cmdRemove,
   cmdRename,
   cmdReplace,
@@ -26,6 +27,9 @@ COMMANDS:
 
     jump <slot|label>
         Jump to a bookmark by slot number (1-based) or label
+
+    pick
+        Interactive TUI picker for bookmarks
 
     list
         List all bookmarks with resolution status
@@ -50,6 +54,7 @@ EXAMPLES:
     tmux-tui add "editor" --pane      # Bookmark current pane as "editor"
     tmux-tui jump 1                   # Jump to bookmark slot 1
     tmux-tui jump "work api"          # Jump to bookmark by label
+    tmux-tui pick                     # Open interactive picker
     tmux-tui list                     # List all bookmarks
     tmux-tui rm 1                     # Remove bookmark at slot 1
     tmux-tui rename 1 "new name"      # Rename bookmark at slot 1
@@ -128,7 +133,8 @@ async function main(): Promise<void> {
       case "list":
       case "ls":
       case "l": {
-        await cmdList()
+        const countOnly = args.includes("--count")
+        await cmdList(countOnly)
         break
       }
 
@@ -173,6 +179,13 @@ async function main(): Promise<void> {
 
       case "state": {
         await cmdState()
+        break
+      }
+
+      case "pick":
+      case "p": {
+        const client = parseClientFlag(args)
+        await cmdPick(client)
         break
       }
 
