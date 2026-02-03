@@ -393,11 +393,11 @@ export class TmuxAdapter {
    * Switch to a target (session/window/pane)
    * Works differently depending on whether we're inside or outside tmux
    */
-  async switchTo(target: TmuxTarget): Promise<void> {
+  async switchTo(target: TmuxTarget, client?: string): Promise<void> {
     const context = this.getContext()
 
     if (context.insideTmux) {
-      await this.switchToInsideTmux(target)
+      await this.switchToInsideTmux(target, client)
     } else {
       await this.switchToOutsideTmux(target)
     }
@@ -406,10 +406,15 @@ export class TmuxAdapter {
   /**
    * Switch when inside tmux - uses switch-client and select-window/pane
    */
-  private async switchToInsideTmux(target: TmuxTarget): Promise<void> {
+  private async switchToInsideTmux(target: TmuxTarget, client?: string): Promise<void> {
     // If we have a session, switch to it
     if (target.sessionId) {
-      await this.run(["switch-client", "-t", target.sessionId])
+      const args = ["switch-client"]
+      if (client) {
+        args.push("-c", client)
+      }
+      args.push("-t", target.sessionId)
+      await this.run(args)
     }
 
     // If we have a window, select it

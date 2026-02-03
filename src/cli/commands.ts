@@ -117,7 +117,7 @@ export async function cmdAdd(label: string, kind: BookmarkKind = "window"): Prom
 /**
  * Jump to a bookmark by slot number or label
  */
-export async function cmdJump(target: string): Promise<void> {
+export async function cmdJump(target: string, client?: string): Promise<void> {
   // Try to parse as slot number first
   const slot = Number.parseInt(target, 10)
 
@@ -144,7 +144,7 @@ export async function cmdJump(target: string): Promise<void> {
 
   // Switch to target
   try {
-    await adapter.switchTo(resolution.target)
+    await adapter.switchTo(resolution.target, client)
   } catch (e) {
     if (e instanceof TmuxError) {
       console.error(`Error: ${e.message}`)

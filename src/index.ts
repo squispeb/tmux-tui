@@ -62,8 +62,31 @@ function parseKind(args: string[]): BookmarkKind {
   return "window" // default
 }
 
+function parseClientFlag(args: string[]): string | undefined {
+  const clientIdx = args.indexOf("--client")
+  if (clientIdx !== -1 && args[clientIdx + 1]) {
+    return args[clientIdx + 1]
+  }
+  return undefined
+}
+
 function filterFlags(args: string[]): string[] {
-  return args.filter((a) => !a.startsWith("-"))
+  const result: string[] = []
+  let skipNext = false
+  for (const arg of args) {
+    if (skipNext) {
+      skipNext = false
+      continue
+    }
+    if (arg === "--client") {
+      skipNext = true
+      continue
+    }
+    if (!arg.startsWith("-")) {
+      result.push(arg)
+    }
+  }
+  return result
 }
 
 async function main(): Promise<void> {
@@ -91,13 +114,14 @@ async function main(): Promise<void> {
 
       case "jump":
       case "j": {
-        const target = args[1]
+        const target = filterFlags(args.slice(1))[0]
         if (!target) {
           console.error("Error: target required")
           console.error("Usage: tmux-tui jump <slot|label>")
           process.exit(1)
         }
-        await cmdJump(target)
+        const client = parseClientFlag(args)
+        await cmdJump(target, client)
         break
       }
 
