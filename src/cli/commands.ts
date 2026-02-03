@@ -143,6 +143,12 @@ export async function cmdJump(target: string, client?: string): Promise<void> {
   // Update last used timestamp
   await store.touch(bookmark.id)
 
+  // Update view state
+  const state = await store.getState()
+  if (state.lastViewedId !== bookmark.id) {
+    await store.setState({ lastViewedId: bookmark.id, prevViewedId: state.lastViewedId })
+  }
+
   // Switch to target
   try {
     await adapter.switchTo(resolution.target, client)
@@ -388,19 +394,25 @@ export async function cmdPick(client?: string): Promise<void> {
   }
 
   // Resolve all bookmarks to get their status
-  const resolvedStatus = await Promise.all(
-    bookmarks.map(async (bookmark) => {
-      const resolution = await resolveBookmark(bookmark, adapter)
-      return resolution.resolved
-    })
-  )
+  const resolutions = await Promise.all(bookmarks.map((bookmark) => resolveBookmark(bookmark, adapter)))
+  const resolvedStatus = resolutions.map((resolution) => resolution.resolved)
+
+  const currentPane = await adapter.getCurrentPane()
+  const currentWindowLabel = currentPane
+    ? `${currentPane.sessionName}:${currentPane.windowIndex} ${currentPane.windowName}`
+    : "unknown"
+  const contextLine = `From ${currentWindowLabel}`
+  const state = await store.getState()
+  const lastAvailable = Boolean(state.prevViewedId)
 
   // Run the picker
   const result = await runPicker(bookmarks, resolvedStatus, {
     title: "Bookmarks",
+    contextLine,
+    lastAvailable,
   })
 
-  if (result) {
+  if (result && result.action === "select") {
     // User selected a bookmark - jump to it
     const { bookmark } = result
     const resolution = await resolveBookmark(bookmark, adapter)
@@ -413,6 +425,11 @@ export async function cmdPick(client?: string): Promise<void> {
     // Update last used timestamp
     await store.touch(bookmark.id)
 
+    // Update view state
+    if (state.lastViewedId !== bookmark.id) {
+      await store.setState({ lastViewedId: bookmark.id, prevViewedId: state.lastViewedId })
+    }
+
     // Switch to target
     try {
       await adapter.switchTo(resolution.target, client)
@@ -420,6 +437,35 @@ export async function cmdPick(client?: string): Promise<void> {
       if (e instanceof TmuxError) {
         console.error(`Error: ${e.message}`)
         process.exit(1)
+      }
+      throw e
+    }
+  }
+
+  if (result && result.action === "last") {
+    if (!state.prevViewedId) {
+      return
+    }
+
+    const prevBookmark = await store.get(state.prevViewedId)
+    if (!prevBookmark) {
+      return
+    }
+
+    const resolution = await resolveBookmark(prevBookmark, adapter)
+    if (!resolution.resolved) {
+      return
+    }
+
+    await store.touch(prevBookmark.id)
+
+    await store.setState({ lastViewedId: prevBookmark.id, prevViewedId: state.lastViewedId })
+
+    try {
+      await adapter.switchTo(resolution.target, client)
+    } catch (e) {
+      if (e instanceof TmuxError) {
+        return
       }
       throw e
     }

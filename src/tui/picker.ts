@@ -76,8 +76,15 @@ interface PickerItem {
 interface PickerOptions {
   title?: string
   width?: number
+  contextLine?: string
+  lastAvailable?: boolean
   onSelect?: (bookmark: Bookmark, index: number) => Promise<void>
 }
+
+type PickerResult =
+  | { action: "select"; bookmark: Bookmark; index: number }
+  | { action: "last" }
+  | null
 
 /**
  * Get terminal size
@@ -140,6 +147,8 @@ function draw(
   selectedIndex: number,
   title: string,
   width: number,
+  contextLine?: string,
+  lastAvailable?: boolean,
 ): void {
   const { rows } = getTerminalSize()
   const contentWidth = width - 2 // Subtract border
@@ -166,6 +175,11 @@ function draw(
 
   output += `${margin}${ansi.fg.cyan}${box.topLeft}${box.horizontal.repeat(leftPad)}${ansi.bold}${titleText}${ansi.reset}${ansi.fg.cyan}${box.horizontal.repeat(rightPad)}${box.topRight}${ansi.reset}\n`
 
+  if (contextLine) {
+    const contextText = pad(` ${truncate(contextLine, contentWidth - 1)}`, contentWidth)
+    output += `${margin}${box.vertical}${ansi.dim}${contextText}${ansi.reset}${box.vertical}\n`
+  }
+
   // Items
   if (items.length === 0) {
     const emptyMsg = "No bookmarks yet"
@@ -183,7 +197,9 @@ function draw(
   output += `${margin}${ansi.fg.cyan}${box.teeLeft}${box.horizontal.repeat(contentWidth)}${box.teeRight}${ansi.reset}\n`
 
   // Help line
-  const helpText = " j/k:nav  1-9/Enter:jump  q:quit "
+  const helpText = lastAvailable
+    ? " Tab/Shift-Tab:last  j/k  1-9/Enter  q:quit "
+    : " j/k  1-9/Enter  q:quit "
   const helpPad = Math.max(0, contentWidth - helpText.length)
   output += `${margin}${box.vertical}${ansi.dim}${helpText}${ansi.reset}${" ".repeat(helpPad)}${box.vertical}\n`
 
@@ -223,10 +239,12 @@ export async function runPicker(
   bookmarks: Bookmark[],
   resolvedStatus: boolean[],
   options: PickerOptions = {},
-): Promise<{ bookmark: Bookmark; index: number } | null> {
+): Promise<PickerResult> {
   const {
     title = "Bookmarks",
     width = Math.min(60, getTerminalSize().cols - 4),
+    contextLine,
+    lastAvailable = false,
     onSelect,
   } = options
 
@@ -239,10 +257,10 @@ export async function runPicker(
 
   let selectedIndex = 0
   let running = true
-  let result: { bookmark: Bookmark; index: number } | null = null
+  let result: PickerResult = null
 
   // Initial draw
-  draw(items, selectedIndex, title, width)
+  draw(items, selectedIndex, title, width, contextLine, lastAvailable)
 
   while (running) {
     const key = await readKey()
@@ -274,7 +292,7 @@ export async function runPicker(
       case "\n":
         if (items.length > 0) {
           const item = items[selectedIndex]!
-          result = { bookmark: item.bookmark, index: selectedIndex }
+          result = { action: "select", bookmark: item.bookmark, index: selectedIndex }
           running = false
         }
         break
@@ -291,7 +309,16 @@ export async function runPicker(
         const num = parseInt(key, 10) - 1
         if (num < items.length) {
           const item = items[num]!
-          result = { bookmark: item.bookmark, index: num }
+          result = { action: "select", bookmark: item.bookmark, index: num }
+          running = false
+        }
+        break
+
+      case "\t": // Tab
+      case "\x1b[Z": // Shift-Tab
+      case "\x09": // Ctrl+I
+        if (lastAvailable) {
+          result = { action: "last" }
           running = false
         }
         break
@@ -308,7 +335,7 @@ export async function runPicker(
     }
 
     if (running) {
-      draw(items, selectedIndex, title, width)
+      draw(items, selectedIndex, title, width, contextLine, lastAvailable)
     }
   }
 

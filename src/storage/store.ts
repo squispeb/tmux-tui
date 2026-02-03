@@ -9,6 +9,7 @@ import type {
   Bookmark,
   BookmarkKind,
   BookmarksFile,
+  BookmarksState,
   TmuxFallback,
   TmuxTarget,
 } from "../types/index.ts"
@@ -72,7 +73,7 @@ export class BookmarkStore {
       const exists = await file.exists()
 
       if (!exists) {
-        return { version: CURRENT_SCHEMA_VERSION, items: [] }
+        return { version: CURRENT_SCHEMA_VERSION, items: [], state: {} }
       }
 
       const content = await file.json()
@@ -81,7 +82,7 @@ export class BookmarkStore {
       // If file doesn't exist or is invalid, return empty state
       if (e instanceof SyntaxError) {
         console.error("Warning: bookmarks file is corrupted, starting fresh")
-        return { version: CURRENT_SCHEMA_VERSION, items: [] }
+        return { version: CURRENT_SCHEMA_VERSION, items: [], state: {} }
       }
       throw e
     }
@@ -93,12 +94,29 @@ export class BookmarkStore {
   private migrate(data: BookmarksFile): BookmarksFile {
     // Currently only version 1, so no migrations needed
     if (data.version === CURRENT_SCHEMA_VERSION) {
-      return data
+      return { state: data.state ?? {}, ...data }
     }
 
     // Future migrations would go here
     // For now, just update the version
-    return { ...data, version: CURRENT_SCHEMA_VERSION }
+    return { ...data, version: CURRENT_SCHEMA_VERSION, state: data.state ?? {} }
+  }
+
+  /**
+   * Get view state
+   */
+  async getState(): Promise<BookmarksState> {
+    const data = await this.read()
+    return data.state ?? {}
+  }
+
+  /**
+   * Update view state
+   */
+  async setState(state: BookmarksState): Promise<void> {
+    const data = await this.read()
+    data.state = state
+    await this.write(data)
   }
 
   /**

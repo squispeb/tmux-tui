@@ -46,6 +46,16 @@ export interface BookmarksFile {
   version: number
   /** List of bookmarks */
   items: Bookmark[]
+  /** View state (last/previous bookmark) */
+  state?: BookmarksState
+}
+
+/** View history for quick toggling */
+export interface BookmarksState {
+  /** Last viewed bookmark id */
+  lastViewedId?: string
+  /** Previously viewed bookmark id */
+  prevViewedId?: string
 }
 
 /** Current schema version */
