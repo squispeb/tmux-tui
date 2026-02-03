@@ -12,6 +12,8 @@
     "build": "bun build src/index.ts --compile --outfile=dist/tmux-tui",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
+    "test:unit": "bun test src/",
+    "test:integration": "bun test tests/integration/",
     "lint": "bunx @biomejs/biome lint ./src",
     "format": "bunx @biomejs/biome format --write ./src"
   },

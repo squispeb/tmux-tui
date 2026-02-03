@@ -40,6 +40,12 @@ export class TmuxNoServerError extends Error {
   }
 }
 
+/** Options for TmuxAdapter */
+export interface TmuxAdapterOptions {
+  /** Custom socket name (uses -L flag). Useful for testing with isolated servers. */
+  socketName?: string
+}
+
 // Format strings for tmux commands
 const SESSION_FORMAT = [
   "#{session_id}",
@@ -75,8 +81,9 @@ const PANE_FORMAT = [
 /**
  * Execute a tmux command and return stdout
  */
-async function runTmux(args: string[]): Promise<string> {
-  const proc = Bun.spawn(["tmux", ...args], {
+async function runTmux(args: string[], socketArgs: string[] = []): Promise<string> {
+  const fullArgs = [...socketArgs, ...args]
+  const proc = Bun.spawn(["tmux", ...fullArgs], {
     stdout: "pipe",
     stderr: "pipe",
   })
@@ -100,7 +107,7 @@ async function runTmux(args: string[]): Promise<string> {
 
     throw new TmuxError(
       stderr.trim() || `command failed with exit code ${exitCode}`,
-      `tmux ${args.join(" ")}`,
+      `tmux ${fullArgs.join(" ")}`,
       exitCode,
       stderr,
     )
@@ -188,12 +195,30 @@ function parsePane(line: string): TmuxPane | null {
  * TmuxAdapter - main interface for interacting with tmux
  */
 export class TmuxAdapter {
+  /** Socket args to prepend to all tmux commands */
+  private readonly socketArgs: string[]
+
+  /** Socket name (if using custom socket) */
+  readonly socketName?: string
+
+  constructor(options?: TmuxAdapterOptions) {
+    this.socketName = options?.socketName
+    this.socketArgs = options?.socketName ? ["-L", options.socketName] : []
+  }
+
+  /**
+   * Run a tmux command with this adapter's socket configuration
+   */
+  async run(args: string[]): Promise<string> {
+    return runTmux(args, this.socketArgs)
+  }
+
   /**
    * Check if tmux is available and a server is running
    */
   async isAvailable(): Promise<boolean> {
     try {
-      await runTmux(["list-sessions", "-F", "#{session_id}"])
+      await this.run(["list-sessions", "-F", "#{session_id}"])
       return true
     } catch (e) {
       if (e instanceof TmuxNotFoundError || e instanceof TmuxNoServerError) {
@@ -227,7 +252,7 @@ export class TmuxAdapter {
    * List all sessions
    */
   async listSessions(): Promise<TmuxSession[]> {
-    const output = await runTmux(["list-sessions", "-F", SESSION_FORMAT])
+    const output = await this.run(["list-sessions", "-F", SESSION_FORMAT])
     return output
       .trim()
       .split("\n")
@@ -240,7 +265,7 @@ export class TmuxAdapter {
    * List all windows across all sessions
    */
   async listWindows(): Promise<TmuxWindow[]> {
-    const output = await runTmux(["list-windows", "-a", "-F", WINDOW_FORMAT])
+    const output = await this.run(["list-windows", "-a", "-F", WINDOW_FORMAT])
     return output
       .trim()
       .split("\n")
@@ -253,7 +278,7 @@ export class TmuxAdapter {
    * List all panes across all sessions/windows
    */
   async listPanes(): Promise<TmuxPane[]> {
-    const output = await runTmux(["list-panes", "-a", "-F", PANE_FORMAT])
+    const output = await this.run(["list-panes", "-a", "-F", PANE_FORMAT])
     return output
       .trim()
       .split("\n")
@@ -384,17 +409,17 @@ export class TmuxAdapter {
   private async switchToInsideTmux(target: TmuxTarget): Promise<void> {
     // If we have a session, switch to it
     if (target.sessionId) {
-      await runTmux(["switch-client", "-t", target.sessionId])
+      await this.run(["switch-client", "-t", target.sessionId])
     }
 
     // If we have a window, select it
     if (target.windowId) {
-      await runTmux(["select-window", "-t", target.windowId])
+      await this.run(["select-window", "-t", target.windowId])
     }
 
     // If we have a pane, select it
     if (target.paneId) {
-      await runTmux(["select-pane", "-t", target.paneId])
+      await this.run(["select-pane", "-t", target.paneId])
     }
   }
 
@@ -402,7 +427,7 @@ export class TmuxAdapter {
    * Switch when outside tmux - uses attach-session
    */
   private async switchToOutsideTmux(target: TmuxTarget): Promise<void> {
-    const args = ["attach-session"]
+    const args = [...this.socketArgs, "attach-session"]
 
     // Determine what to attach to
     if (target.paneId) {

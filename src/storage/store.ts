@@ -28,6 +28,11 @@ function generateId(): string {
   return crypto.randomUUID()
 }
 
+/** Generate a unique temp file suffix */
+function generateTempSuffix(): string {
+  return `${process.pid}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
+}
+
 /** Get current Unix timestamp */
 function now(): number {
   return Math.floor(Date.now() / 1000)
@@ -102,7 +107,7 @@ export class BookmarkStore {
   async write(data: BookmarksFile): Promise<void> {
     await this.ensureDir()
 
-    const tempPath = `${this.path}.tmp.${process.pid}`
+    const tempPath = `${this.path}.tmp.${generateTempSuffix()}`
 
     try {
       // Write to temp file
