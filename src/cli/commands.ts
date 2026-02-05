@@ -410,6 +410,23 @@ export async function cmdPick(client?: string): Promise<void> {
     title: "Bookmarks",
     contextLine,
     lastAvailable,
+    onDelete: async (bookmark, index) => {
+      const removed = await store.remove(bookmark.id)
+      if (!removed) return false
+
+      const state = await store.getState()
+      if (state.lastViewedId === bookmark.id || state.prevViewedId === bookmark.id) {
+        await store.setState({
+          lastViewedId: state.lastViewedId === bookmark.id ? undefined : state.lastViewedId,
+          prevViewedId: state.prevViewedId === bookmark.id ? undefined : state.prevViewedId,
+        })
+      }
+
+      // Remove from local list so picker stays in sync
+      bookmarks.splice(index, 1)
+      resolvedStatus.splice(index, 1)
+      return true
+    },
   })
 
   if (result && result.action === "select") {

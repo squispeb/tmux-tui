@@ -79,6 +79,7 @@ interface PickerOptions {
   contextLine?: string
   lastAvailable?: boolean
   onSelect?: (bookmark: Bookmark, index: number) => Promise<void>
+  onDelete?: (bookmark: Bookmark, index: number) => Promise<boolean>
 }
 
 type PickerResult =
@@ -146,12 +147,21 @@ function draw(
   items: PickerItem[],
   selectedIndex: number,
   title: string,
-  width: number,
+  requestedWidth: number,
   contextLine?: string,
   lastAvailable?: boolean,
+  deleteAvailable?: boolean,
 ): void {
-  const { rows } = getTerminalSize()
-  const contentWidth = width - 2 // Subtract border
+  const { rows, cols } = getTerminalSize()
+  const margin = cols >= 6 ? 1 : 0
+  const boxWidth = Math.max(4, Math.min(requestedWidth, cols - margin * 2))
+  const contentWidth = boxWidth - 2 // Subtract border
+  const itemLines = items.length === 0 ? 1 : items.length
+  const boxHeight = 1 + (contextLine ? 1 : 0) + itemLines + 1 + 1 + 1
+  const topPad = rows >= boxHeight + margin * 2 ? margin : 0
+  const bottomPad = rows >= boxHeight + margin * 2 ? margin : 0
+  const padLeft = " ".repeat(margin)
+  const padRight = " ".repeat(margin)
 
   // Build output buffer
   let output = ""
@@ -161,50 +171,57 @@ function draw(
   output += ansi.moveTo(1, 1)
   output += ansi.clearScreen
 
-  // Top margin (1 space padding from popup border)
-  output += "\n"
-
-  // Left margin prefix (1 space padding from popup border)
-  const margin = " "
+  if (topPad > 0) {
+    output += "\n".repeat(topPad)
+  }
 
   // Title bar
-  const titleText = ` ${title} `
+  const titleCore = truncate(title, Math.max(0, contentWidth - 2))
+  const titleText = titleCore.length > 0 ? ` ${titleCore} ` : ""
   const titlePadding = Math.max(0, contentWidth - titleText.length)
-  const leftPad = Math.floor(titlePadding / 2)
-  const rightPad = titlePadding - leftPad
+  const titleLeftPad = Math.floor(titlePadding / 2)
+  const titleRightPad = titlePadding - titleLeftPad
 
-  output += `${margin}${ansi.fg.cyan}${box.topLeft}${box.horizontal.repeat(leftPad)}${ansi.bold}${titleText}${ansi.reset}${ansi.fg.cyan}${box.horizontal.repeat(rightPad)}${box.topRight}${ansi.reset}\n`
+  output += `${padLeft}${ansi.fg.cyan}${box.topLeft}${box.horizontal.repeat(titleLeftPad)}${ansi.bold}${titleText}${ansi.reset}${ansi.fg.cyan}${box.horizontal.repeat(titleRightPad)}${box.topRight}${ansi.reset}${padRight}\n`
 
   if (contextLine) {
-    const contextText = pad(` ${truncate(contextLine, contentWidth - 1)}`, contentWidth)
-    output += `${margin}${box.vertical}${ansi.dim}${contextText}${ansi.reset}${box.vertical}\n`
+    const contextText = pad(` ${truncate(contextLine, Math.max(0, contentWidth - 1))}`, contentWidth)
+    output += `${padLeft}${box.vertical}${ansi.dim}${contextText}${ansi.reset}${box.vertical}${padRight}\n`
   }
 
   // Items
   if (items.length === 0) {
     const emptyMsg = "No bookmarks yet"
     const msgPad = Math.floor((contentWidth - emptyMsg.length) / 2)
-    output += `${margin}${box.vertical}${" ".repeat(msgPad)}${ansi.dim}${emptyMsg}${ansi.reset}${" ".repeat(contentWidth - msgPad - emptyMsg.length)}${box.vertical}\n`
+    output += `${padLeft}${box.vertical}${" ".repeat(msgPad)}${ansi.dim}${emptyMsg}${ansi.reset}${" ".repeat(contentWidth - msgPad - emptyMsg.length)}${box.vertical}${padRight}\n`
   } else {
     for (let i = 0; i < items.length; i++) {
       const item = items[i]!
       const isSelected = i === selectedIndex
-      output += margin + formatItem(item, i, isSelected, width) + "\n"
+      output += `${padLeft}${formatItem(item, i, isSelected, boxWidth)}${padRight}\n`
     }
   }
 
   // Separator
-  output += `${margin}${ansi.fg.cyan}${box.teeLeft}${box.horizontal.repeat(contentWidth)}${box.teeRight}${ansi.reset}\n`
+  output += `${padLeft}${ansi.fg.cyan}${box.teeLeft}${box.horizontal.repeat(contentWidth)}${box.teeRight}${ansi.reset}${padRight}\n`
 
   // Help line
-  const helpText = lastAvailable
-    ? " Tab/Shift-Tab:last  j/k  1-9/Enter  q:quit "
-    : " j/k  1-9/Enter  q:quit "
-  const helpPad = Math.max(0, contentWidth - helpText.length)
-  output += `${margin}${box.vertical}${ansi.dim}${helpText}${ansi.reset}${" ".repeat(helpPad)}${box.vertical}\n`
+  const helpParts: string[] = []
+  if (lastAvailable) helpParts.push("Tab:last")
+  helpParts.push("j/k")
+  helpParts.push("1-9/Enter")
+  if (deleteAvailable) helpParts.push("d:del")
+  helpParts.push("q")
+  const helpRaw = ` ${helpParts.join("  ")} `
+  const helpText = pad(truncate(helpRaw, contentWidth), contentWidth)
+  output += `${padLeft}${box.vertical}${ansi.dim}${helpText}${ansi.reset}${box.vertical}${padRight}\n`
 
   // Bottom border
-  output += `${margin}${ansi.fg.cyan}${box.bottomLeft}${box.horizontal.repeat(contentWidth)}${box.bottomRight}${ansi.reset}\n`
+  output += `${padLeft}${ansi.fg.cyan}${box.bottomLeft}${box.horizontal.repeat(contentWidth)}${box.bottomRight}${ansi.reset}${padRight}\n`
+
+  if (bottomPad > 0) {
+    output += "\n".repeat(bottomPad)
+  }
 
   // Write to stdout
   process.stdout.write(output)
@@ -246,7 +263,9 @@ export async function runPicker(
     contextLine,
     lastAvailable = false,
     onSelect,
+    onDelete,
   } = options
+  const deleteAvailable = Boolean(onDelete)
 
   // Prepare items
   const items: PickerItem[] = bookmarks.map((bookmark, i) => ({
@@ -260,7 +279,7 @@ export async function runPicker(
   let result: PickerResult = null
 
   // Initial draw
-  draw(items, selectedIndex, title, width, contextLine, lastAvailable)
+  draw(items, selectedIndex, title, width, contextLine, lastAvailable, deleteAvailable)
 
   while (running) {
     const key = await readKey()
@@ -323,6 +342,19 @@ export async function runPicker(
         }
         break
 
+      case "d":
+        if (items.length > 0 && onDelete) {
+          const item = items[selectedIndex]!
+          const deleted = await onDelete(item.bookmark, selectedIndex)
+          if (deleted) {
+            items.splice(selectedIndex, 1)
+            if (selectedIndex >= items.length) {
+              selectedIndex = Math.max(0, items.length - 1)
+            }
+          }
+        }
+        break
+
       case "q":
       case "\x1b": // Escape
       case "\x03": // Ctrl+C
@@ -335,7 +367,7 @@ export async function runPicker(
     }
 
     if (running) {
-      draw(items, selectedIndex, title, width, contextLine, lastAvailable)
+      draw(items, selectedIndex, title, width, contextLine, lastAvailable, deleteAvailable)
     }
   }
 
