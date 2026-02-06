@@ -80,12 +80,19 @@ interface PickerOptions {
   lastAvailable?: boolean
   onSelect?: (bookmark: Bookmark, index: number) => Promise<void>
   onDelete?: (bookmark: Bookmark, index: number) => Promise<boolean>
+  windowItems?: WindowItem[]
 }
 
 type PickerResult =
   | { action: "select"; bookmark: Bookmark; index: number }
   | { action: "last" }
+  | { action: "window"; target: { sessionId?: string; windowId?: string; paneId?: string } }
   | null
+
+interface WindowItem {
+  label: string
+  target: { sessionId?: string; windowId?: string; paneId?: string }
+}
 
 /**
  * Get terminal size
@@ -102,7 +109,7 @@ function getTerminalSize(): { rows: number; cols: number } {
  */
 function truncate(str: string, maxLen: number): string {
   if (str.length <= maxLen) return str
-  return str.slice(0, maxLen - 1) + "…"
+  return `${str.slice(0, maxLen - 1)}…`
 }
 
 /**
@@ -134,10 +141,33 @@ function formatItem(item: PickerItem, index: number, selected: boolean, width: n
     // Highlighted row - keep borders outside the highlight
     const content = ` ${statusIcon} ${slot}. [${kindBadge}] ${pad(label, labelWidth)} `
     return `${box.vertical}${ansi.bg256(236)}${ansi.fg.cyan}${ansi.bold}${content}${ansi.reset}${box.vertical}`
-  } else {
-    // Normal row
-    return `${box.vertical} ${statusColor}${statusIcon}${ansi.reset} ${ansi.dim}${slot}.${ansi.reset} [${ansi.fg.yellow}${kindBadge}${ansi.reset}] ${pad(label, labelWidth)} ${box.vertical}`
   }
+
+  // Normal row
+  return `${box.vertical} ${statusColor}${statusIcon}${ansi.reset} ${ansi.dim}${slot}.${ansi.reset} [${ansi.fg.yellow}${kindBadge}${ansi.reset}] ${pad(label, labelWidth)} ${box.vertical}`
+}
+
+function formatWindowItem(
+  item: WindowItem,
+  index: number,
+  selected: boolean,
+  width: number,
+): string {
+  const statusIcon = "•"
+  const statusColor = ansi.fg.cyan
+  const kindBadge = "W"
+  const slot = `${index + 1}`
+
+  const fixedWidth = 13
+  const labelWidth = Math.max(10, width - fixedWidth)
+  const label = truncate(item.label, labelWidth)
+
+  if (selected) {
+    const content = ` ${statusIcon} ${slot}. [${kindBadge}] ${pad(label, labelWidth)} `
+    return `${box.vertical}${ansi.bg256(236)}${ansi.fg.cyan}${ansi.bold}${content}${ansi.reset}${box.vertical}`
+  }
+
+  return `${box.vertical} ${statusColor}${statusIcon}${ansi.reset} ${ansi.dim}${slot}.${ansi.reset} [${ansi.fg.yellow}${kindBadge}${ansi.reset}] ${pad(label, labelWidth)} ${box.vertical}`
 }
 
 /**
@@ -151,17 +181,33 @@ function draw(
   contextLine?: string,
   lastAvailable?: boolean,
   deleteAvailable?: boolean,
+  windowItems?: WindowItem[],
+  windowMode?: boolean,
+  filterText?: string,
 ): void {
   const { rows, cols } = getTerminalSize()
   const margin = cols >= 6 ? 1 : 0
   const boxWidth = Math.max(4, Math.min(requestedWidth, cols - margin * 2))
   const contentWidth = boxWidth - 2 // Subtract border
-  const itemLines = items.length === 0 ? 1 : items.length
-  const boxHeight = 1 + (contextLine ? 1 : 0) + itemLines + 1 + 1 + 1
+  const activeItems = windowMode && windowItems ? windowItems : items
+  const infoLine = windowMode ? `Search: ${filterText ?? ""}` : contextLine
+  const hasInfoLine = Boolean(infoLine && infoLine.length > 0)
+  const fixedLines = 1 + (hasInfoLine ? 1 : 0) + 1 + 1 + 1
+  const boxHeight = fixedLines
   const topPad = rows >= boxHeight + margin * 2 ? margin : 0
   const bottomPad = rows >= boxHeight + margin * 2 ? margin : 0
   const padLeft = " ".repeat(margin)
   const padRight = " ".repeat(margin)
+  const availableLines = Math.max(1, rows - (topPad + bottomPad) - fixedLines)
+  const totalItems = activeItems.length
+  const visibleCount = Math.min(Math.max(1, totalItems), availableLines)
+  const startIndex =
+    totalItems > visibleCount
+      ? Math.min(
+          Math.max(0, selectedIndex - Math.floor(visibleCount / 2)),
+          totalItems - visibleCount,
+        )
+      : 0
 
   // Build output buffer
   let output = ""
@@ -184,21 +230,27 @@ function draw(
 
   output += `${padLeft}${ansi.fg.cyan}${box.topLeft}${box.horizontal.repeat(titleLeftPad)}${ansi.bold}${titleText}${ansi.reset}${ansi.fg.cyan}${box.horizontal.repeat(titleRightPad)}${box.topRight}${ansi.reset}${padRight}\n`
 
-  if (contextLine) {
-    const contextText = pad(` ${truncate(contextLine, Math.max(0, contentWidth - 1))}`, contentWidth)
+  if (hasInfoLine && infoLine) {
+    const contextText = pad(` ${truncate(infoLine, Math.max(0, contentWidth - 1))}`, contentWidth)
     output += `${padLeft}${box.vertical}${ansi.dim}${contextText}${ansi.reset}${box.vertical}${padRight}\n`
   }
 
   // Items
-  if (items.length === 0) {
-    const emptyMsg = "No bookmarks yet"
+  if (totalItems === 0) {
+    const emptyMsg = windowMode ? "No windows found" : "No bookmarks yet"
     const msgPad = Math.floor((contentWidth - emptyMsg.length) / 2)
     output += `${padLeft}${box.vertical}${" ".repeat(msgPad)}${ansi.dim}${emptyMsg}${ansi.reset}${" ".repeat(contentWidth - msgPad - emptyMsg.length)}${box.vertical}${padRight}\n`
   } else {
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i]!
-      const isSelected = i === selectedIndex
-      output += `${padLeft}${formatItem(item, i, isSelected, boxWidth)}${padRight}\n`
+    for (let i = 0; i < visibleCount; i++) {
+      const realIndex = startIndex + i
+      const isSelected = realIndex === selectedIndex
+      if (windowMode && windowItems) {
+        const item = windowItems[realIndex]!
+        output += `${padLeft}${formatWindowItem(item, realIndex, isSelected, boxWidth)}${padRight}\n`
+      } else {
+        const item = items[realIndex]!
+        output += `${padLeft}${formatItem(item, realIndex, isSelected, boxWidth)}${padRight}\n`
+      }
     }
   }
 
@@ -207,11 +259,19 @@ function draw(
 
   // Help line
   const helpParts: string[] = []
-  if (lastAvailable) helpParts.push("Tab:last")
-  helpParts.push("j/k")
-  helpParts.push("1-9/Enter")
-  if (deleteAvailable) helpParts.push("d:del")
-  helpParts.push("q")
+  if (windowMode) {
+    helpParts.push("up/down")
+    helpParts.push("Enter")
+    helpParts.push("Bksp")
+    helpParts.push("Esc/q:back")
+  } else {
+    if (lastAvailable) helpParts.push("Tab:last")
+    helpParts.push("j/k")
+    helpParts.push("1-9/Enter")
+    if (deleteAvailable) helpParts.push("d:del")
+    if (windowItems && windowItems.length > 0) helpParts.push("/:win")
+    helpParts.push("q")
+  }
   const helpRaw = ` ${helpParts.join("  ")} `
   const helpText = pad(truncate(helpRaw, contentWidth), contentWidth)
   output += `${padLeft}${box.vertical}${ansi.dim}${helpText}${ansi.reset}${box.vertical}${padRight}\n`
@@ -264,8 +324,10 @@ export async function runPicker(
     lastAvailable = false,
     onSelect,
     onDelete,
+    windowItems: initialWindowItems,
   } = options
   const deleteAvailable = Boolean(onDelete)
+  const hasWindows = Boolean(initialWindowItems && initialWindowItems.length > 0)
 
   // Prepare items
   const items: PickerItem[] = bookmarks.map((bookmark, i) => ({
@@ -277,39 +339,85 @@ export async function runPicker(
   let selectedIndex = 0
   let running = true
   let result: PickerResult = null
+  let windowMode = false
+  let filterText = ""
+  const baseWindowItems = initialWindowItems ? [...initialWindowItems] : undefined
+  let windowItems = baseWindowItems
+  const applyWindowFilter = (nextFilter: string) => {
+    filterText = nextFilter
+    const filtered =
+      baseWindowItems?.filter((item) =>
+        item.label.toLowerCase().includes(filterText.toLowerCase()),
+      ) ?? []
+    windowItems = filtered
+    selectedIndex = 0
+  }
 
   // Initial draw
-  draw(items, selectedIndex, title, width, contextLine, lastAvailable, deleteAvailable)
+  draw(
+    items,
+    selectedIndex,
+    title,
+    width,
+    contextLine,
+    lastAvailable,
+    deleteAvailable,
+    windowItems,
+    windowMode,
+    filterText,
+  )
 
   while (running) {
     const key = await readKey()
 
     switch (key) {
+      case "/":
+        if (hasWindows) {
+          windowMode = true
+          selectedIndex = 0
+          applyWindowFilter("")
+        }
+        break
+
       case "j":
       case "\x1b[B": // Down arrow
-        if (items.length > 0) {
+        if (!windowMode && items.length > 0) {
           selectedIndex = (selectedIndex + 1) % items.length
+        }
+        if (windowMode && key === "\x1b[B" && windowItems && windowItems.length > 0) {
+          selectedIndex = (selectedIndex + 1) % windowItems.length
         }
         break
 
       case "k":
       case "\x1b[A": // Up arrow
-        if (items.length > 0) {
+        if (!windowMode && items.length > 0) {
           selectedIndex = (selectedIndex - 1 + items.length) % items.length
+        }
+        if (windowMode && key === "\x1b[A" && windowItems && windowItems.length > 0) {
+          selectedIndex = (selectedIndex - 1 + windowItems.length) % windowItems.length
         }
         break
 
       case "g": // Go to top
-        selectedIndex = 0
+        if (!windowMode) {
+          selectedIndex = 0
+        }
         break
 
       case "G": // Go to bottom
-        selectedIndex = Math.max(0, items.length - 1)
+        if (!windowMode) {
+          selectedIndex = Math.max(0, items.length - 1)
+        }
         break
 
       case "\r": // Enter
       case "\n":
-        if (items.length > 0) {
+        if (windowMode && windowItems && windowItems.length > 0) {
+          const item = windowItems[selectedIndex]!
+          result = { action: "window", target: item.target }
+          running = false
+        } else if (items.length > 0) {
           const item = items[selectedIndex]!
           result = { action: "select", bookmark: item.bookmark, index: selectedIndex }
           running = false
@@ -324,14 +432,16 @@ export async function runPicker(
       case "6":
       case "7":
       case "8":
-      case "9":
-        const num = parseInt(key, 10) - 1
+      case "9": {
+        if (windowMode) break
+        const num = Number.parseInt(key, 10) - 1
         if (num < items.length) {
           const item = items[num]!
           result = { action: "select", bookmark: item.bookmark, index: num }
           running = false
         }
         break
+      }
 
       case "\t": // Tab
       case "\x1b[Z": // Shift-Tab
@@ -343,7 +453,7 @@ export async function runPicker(
         break
 
       case "d":
-        if (items.length > 0 && onDelete) {
+        if (!windowMode && items.length > 0 && onDelete) {
           const item = items[selectedIndex]!
           const deleted = await onDelete(item.bookmark, selectedIndex)
           if (deleted) {
@@ -355,19 +465,60 @@ export async function runPicker(
         }
         break
 
+      case "\x7f": // Backspace
+      case "\b":
+        if (windowMode && filterText.length > 0) {
+          applyWindowFilter(filterText.slice(0, -1))
+        }
+        break
+
       case "q":
-      case "\x1b": // Escape
-      case "\x03": // Ctrl+C
+        if (windowMode) {
+          windowMode = false
+          filterText = ""
+          windowItems = baseWindowItems
+          selectedIndex = 0
+          break
+        }
         running = false
         break
 
-      case "d": // Delete
-        // TODO: Implement delete
+      case "\x1b": // Escape
+      case "\x03": // Ctrl+C
+        if (windowMode) {
+          windowMode = false
+          filterText = ""
+          windowItems = baseWindowItems
+          selectedIndex = 0
+          break
+        }
+        running = false
         break
     }
 
+    if (
+      windowMode &&
+      key.length === 1 &&
+      key >= " " &&
+      key <= "~" &&
+      !["/", "q", "\t", "\r", "\n"].includes(key)
+    ) {
+      applyWindowFilter(filterText + key)
+    }
+
     if (running) {
-      draw(items, selectedIndex, title, width, contextLine, lastAvailable, deleteAvailable)
+      draw(
+        items,
+        selectedIndex,
+        title,
+        width,
+        contextLine,
+        lastAvailable,
+        deleteAvailable,
+        windowItems,
+        windowMode,
+        filterText,
+      )
     }
   }
 

@@ -406,10 +406,20 @@ export async function cmdPick(client?: string): Promise<void> {
   const lastAvailable = Boolean(state.prevViewedId)
 
   // Run the picker
+  const windows = await adapter.listWindows()
+  const windowItems = windows.map((window) => ({
+    label: `${window.sessionName}:${window.windowIndex} ${window.windowName}`,
+    target: {
+      sessionId: window.sessionId,
+      windowId: window.windowId,
+    },
+  }))
+
   const result = await runPicker(bookmarks, resolvedStatus, {
     title: "Bookmarks",
     contextLine,
     lastAvailable,
+    windowItems,
     onDelete: async (bookmark, index) => {
       const removed = await store.remove(bookmark.id)
       if (!removed) return false
@@ -480,6 +490,17 @@ export async function cmdPick(client?: string): Promise<void> {
 
     try {
       await adapter.switchTo(resolution.target, client)
+    } catch (e) {
+      if (e instanceof TmuxError) {
+        return
+      }
+      throw e
+    }
+  }
+
+  if (result && result.action === "window") {
+    try {
+      await adapter.switchTo(result.target, client)
     } catch (e) {
       if (e instanceof TmuxError) {
         return
