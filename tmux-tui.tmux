@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
 
-repo="${TMUX_TUI_REPO:-$HOME/personal/tmux-tui}"
-out="$repo/dist/tmux-tui"
-bin="$out"
-
 get_tmux_option() {
   local option="$1"
   local default_value="$2"
@@ -15,6 +11,16 @@ get_tmux_option() {
     echo "$default_value"
   fi
 }
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+repo_opt="$(get_tmux_option "@tmux_tui_repo" "")"
+repo_opt_upper="$(get_tmux_option "@TMUX_TUI_REPO" "")"
+repo_default="$script_dir"
+repo="${repo_opt:-${repo_opt_upper:-$repo_default}}"
+
+bin_opt="$(get_tmux_option "@tmux_tui_bin" "")"
+out="$repo/dist/tmux-tui"
+bin="${bin_opt:-$out}"
 
 command -v bun >/dev/null 2>&1 || exit 0
 [ -d "$repo" ] || exit 0

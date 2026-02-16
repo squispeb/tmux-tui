@@ -9,7 +9,6 @@ Fast bookmark and jump tool for tmux with a TUI picker.
 
 ```tmux
 set -g @plugin 'squispeb/tmux-tui'
-set -g @TMUX_TUI_REPO "$HOME/personal/tmux-tui"
 ```
 
 Then press `prefix + I` and reload tmux.
@@ -44,7 +43,6 @@ when sources are newer. TPM loads `*.tmux` files on tmux start/reload.
 ```tmux
 set -g @plugin 'tmux-plugins/tpm'
 set -g @plugin 'squispeb/tmux-tui'
-set -g @TMUX_TUI_REPO "$HOME/personal/tmux-tui"
 set -g @tmux_tui_auto_bind "on"
 set -g @tmux_tui_key_pick "g"
 set -g @tmux_tui_key_add "a"
@@ -76,7 +74,6 @@ Then set your plugin entry to the local name:
 
 ```tmux
 set -g @plugin 'tmux-tui'
-set -g @TMUX_TUI_REPO "$HOME/personal/tmux-tui"
 set -g @tmux_tui_auto_bind "on"
 ```
 
