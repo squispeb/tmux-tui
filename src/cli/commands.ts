@@ -2,11 +2,11 @@
  * CLI commands implementation
  */
 
-import type { BookmarkKind } from "../types/index.ts"
-import { TmuxAdapter, TmuxError, TmuxNoServerError, TmuxNotFoundError } from "../tmux/index.ts"
 import { BookmarkStore } from "../storage/index.ts"
-import { resolveBookmark } from "./resolver.ts"
+import { TmuxAdapter, TmuxError, TmuxNoServerError, TmuxNotFoundError } from "../tmux/index.ts"
 import { runPicker } from "../tui/index.ts"
+import type { BookmarkKind } from "../types/index.ts"
+import { resolveBookmark } from "./resolver.ts"
 
 const adapter = new TmuxAdapter()
 const store = new BookmarkStore()
@@ -123,9 +123,7 @@ export async function cmdJump(target: string, client?: string): Promise<void> {
   const slot = Number.parseInt(target, 10)
 
   const bookmark =
-    !Number.isNaN(slot) && slot > 0
-      ? await store.getBySlot(slot)
-      : await store.getByLabel(target)
+    !Number.isNaN(slot) && slot > 0 ? await store.getBySlot(slot) : await store.getByLabel(target)
 
   if (!bookmark) {
     console.error(`Error: bookmark not found: ${target}`)
@@ -234,9 +232,7 @@ export async function cmdRename(target: string, newLabel: string): Promise<void>
   const slot = Number.parseInt(target, 10)
 
   const bookmark =
-    !Number.isNaN(slot) && slot > 0
-      ? await store.getBySlot(slot)
-      : await store.getByLabel(target)
+    !Number.isNaN(slot) && slot > 0 ? await store.getBySlot(slot) : await store.getByLabel(target)
 
   if (!bookmark) {
     console.error(`Error: bookmark not found: ${target}`)
@@ -388,13 +384,10 @@ export async function cmdState(): Promise<void> {
 export async function cmdPick(client?: string): Promise<void> {
   const bookmarks = await store.list()
 
-  if (bookmarks.length === 0) {
-    console.log("No bookmarks yet. Use 'tmux-tui add <label>' to create one.")
-    return
-  }
-
   // Resolve all bookmarks to get their status
-  const resolutions = await Promise.all(bookmarks.map((bookmark) => resolveBookmark(bookmark, adapter)))
+  const resolutions = await Promise.all(
+    bookmarks.map((bookmark) => resolveBookmark(bookmark, adapter)),
+  )
   const resolvedStatus = resolutions.map((resolution) => resolution.resolved)
 
   const currentPane = await adapter.getCurrentPane()
