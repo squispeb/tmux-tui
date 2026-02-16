@@ -45,6 +45,14 @@ when sources are newer. TPM loads `*.tmux` files on tmux start/reload.
 set -g @plugin 'tmux-plugins/tpm'
 set -g @plugin 'squispeb/tmux-tui'
 set -g @TMUX_TUI_REPO "$HOME/personal/tmux-tui"
+set -g @tmux_tui_auto_bind "on"
+set -g @tmux_tui_key_pick "g"
+set -g @tmux_tui_key_add "a"
+set -g @tmux_tui_key_add_pane "A"
+set -g @tmux_tui_key_jump "G"
+set -g @tmux_tui_popup_width "42"
+set -g @tmux_tui_popup_extra_lines "9"
+set -g @tmux_tui_popup_min_height "10"
 ```
 
 2) Install with `prefix + I`.
@@ -69,6 +77,7 @@ Then set your plugin entry to the local name:
 ```tmux
 set -g @plugin 'tmux-tui'
 set -g @TMUX_TUI_REPO "$HOME/personal/tmux-tui"
+set -g @tmux_tui_auto_bind "on"
 ```
 
 ## tmux keybinds (example)
