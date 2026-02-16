@@ -1,6 +1,18 @@
 # tmux-tui
 
+[![TPM](https://img.shields.io/badge/TPM-plugin-blue)](https://github.com/tmux-plugins/tpm)
+[![Release](https://img.shields.io/github/v/release/squispeb/tmux-tui?display_name=tag)](https://github.com/squispeb/tmux-tui/releases)
+
 Fast bookmark and jump tool for tmux with a TUI picker.
+
+## Quick install (TPM)
+
+```tmux
+set -g @plugin 'squispeb/tmux-tui'
+set -g @TMUX_TUI_REPO "$HOME/personal/tmux-tui"
+```
+
+Then press `prefix + I` and reload tmux.
 
 ## Requirements
 
